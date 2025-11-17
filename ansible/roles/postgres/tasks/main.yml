@@ -1,0 +1,49 @@
+---
+- name: Stop PostgreSQL service
+  become: yes
+  service:
+    name: postgresql
+    state: stopped
+  ignore_errors: yes
+
+- name: Remove corrupted PostgreSQL cluster (force cleanup)
+  become: yes
+  shell: |
+    rm -rf /var/lib/postgresql/14/main
+    rm -rf /etc/postgresql/14/main
+  ignore_errors: yes
+
+- name: Create new PostgreSQL cluster on port 5432
+  become: yes
+  shell: |
+    pg_createcluster 14 main --port=5432
+  args:
+    creates: /var/lib/postgresql/14/main/PG_VERSION
+
+- name: Start PostgreSQL service
+  become: yes
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Wait for PostgreSQL to start listening on port 5432
+  wait_for:
+    host: 127.0.0.1
+    port: 5432
+    delay: 5
+    timeout: 30
+
+- name: Configure postgresql.conf
+  template:
+    src: postgresql.conf.j2
+    dest: /etc/postgresql/14/main/postgresql.conf
+  notify: restart postgresql
+  become: yes
+
+- name: Configure pg_hba.conf
+  template:
+    src: pg_hba.conf.j2
+    dest: /etc/postgresql/14/main/pg_hba.conf
+  notify: reload postgresql
+  become: yes

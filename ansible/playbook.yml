@@ -1,0 +1,8 @@
+---
+- name: Configure PostgreSQL primary and replica
+  hosts: db
+  become: yes
+  vars:
+    repl_password: "{{ repl_password }}"
+  roles:
+    - postgres
