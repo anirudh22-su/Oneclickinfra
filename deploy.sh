@@ -9,55 +9,60 @@ BASTION_A=$(terraform output -raw bastion_a_public_ip)
 BASTION_B=$(terraform output -raw bastion_b_public_ip)
 cd ..
 
-SSH_CONFIG=/home/anirudh/.ssh/oneclick_config
+SSH_CONFIG="/home/anirudh/.ssh/oneclick_config"
+SSH_KEY="/home/anirudh/.ssh/oneclick.pem"
 
-# Create SSH config for no-interaction and jump host
+# Create SSH configuration with ProxyJump and disabled host key checking
 cat > $SSH_CONFIG <<EOF
 Host bastion_primary
   HostName ${BASTION_A}
   User ubuntu
-  IdentityFile /home/anirudh/.ssh/oneclick.pem
+  IdentityFile ${SSH_KEY}
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
 
-Host primary
+Host db_primary
   HostName ${PRIMARY}
   User ubuntu
-  IdentityFile /home/anirudh/.ssh/oneclick.pem
+  IdentityFile ${SSH_KEY}
   ProxyJump bastion_primary
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
 
 Host bastion_replica
   HostName ${BASTION_B}
   User ubuntu
-  IdentityFile /home/anirudh/.ssh/oneclick.pem
+  IdentityFile ${SSH_KEY}
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
 
-Host replica
+Host db_replica
   HostName ${REPLICA}
   User ubuntu
-  IdentityFile /home/anirudh/.ssh/oneclick.pem
+  IdentityFile ${SSH_KEY}
   ProxyJump bastion_replica
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
 EOF
 
 chmod 600 $SSH_CONFIG
 
-# Force Ansible to use this SSH config
-export ANSIBLE_SSH_COMMON_ARGS="-o StrictHostKeyChecking=no -F $SSH_CONFIG"
+# Export SSH config to be used for Ansible
+export ANSIBLE_SSH_COMMON_ARGS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F $SSH_CONFIG"
 
-# Create inventory using aliases
+# Generate Ansible inventory
 cat > ansible/inventory.ini <<EOF
-[primary]
-primary
-
-[replica]
-replica
-
-[db:children]
-primary
-replica
+[db]
+db_primary
+db_replica
 EOF
 
 echo "📋 Inventory created. Running Ansible playbook..."
 
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+# Run PostgreSQL setup playbook
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+  --extra-vars "primary_ip=${PRIMARY} replica_ip=${REPLICA} repl_password=${REPL_PASS}"
 
-echo "🎉 PostgreSQL setup done! You can now SSH as:"
-echo "  👉 ssh -F ~/.ssh/oneclick_config primary"
-echo "  👉 ssh -F ~/.ssh/oneclick_config replica"
+
+
+echo "🎉 PostgreSQL installation complete!"
