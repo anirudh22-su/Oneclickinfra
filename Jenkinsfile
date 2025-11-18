@@ -2,53 +2,47 @@ pipeline {
     agent any
 
     environment {
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        // Replication password used inside deploy.sh -> Ansible
+        REPL_PASS = "StrongReplicationPass1!"
     }
 
     stages {
 
-        stage('Checkout') {
-            steps { checkout scm }
+        stage('Checkout from GitHub') {
+            steps {
+                // Jenkins will actually do checkout for you when using "Pipeline from SCM",
+                // but this stage is harmless if you later switch to "Pipeline script".
+                echo "✅ Code already fetched from GitHub workspace"
+                sh 'ls -R'
+            }
         }
 
         stage('Terraform Init') {
             steps {
-                dir('terraform') {
-                    sh 'terraform init -input=false -upgrade'
-                }
+                sh '''
+                cd terraform
+                terraform init
+                '''
             }
         }
 
         stage('Terraform Apply') {
             steps {
-                dir('terraform') {
-                    sh 'terraform apply -auto-approve -input=false'
-                }
+                sh '''
+                cd terraform
+                terraform apply -auto-approve
+                '''
             }
         }
 
-        stage('Configure PostgreSQL (Ansible)') {
+        stage('Deploy PostgreSQL with Ansible') {
             steps {
-                withCredentials([
-                    sshUserPrivateKey(credentialsId: 'oneclick-ssh-key', keyFileVariable: 'SSH_KEY'),
-                    string(credentialsId: 'repl-password', variable: 'REPL_PASS')
-                ]) {
-                    sh '''
-                        mkdir -p ~/.ssh
-                        cp "$SSH_KEY" ~/.ssh/oneclick.pem
-                        chmod 600 ~/.ssh/oneclick.pem
-                        export REPL_PASS=$REPL_PASS
-                        ./deploy.sh
-                    '''
-                }
+                sh '''
+                cd ${WORKSPACE}
+                chmod +x deploy.sh
+                ./deploy.sh
+                '''
             }
         }
-    }
-
-    post {
-        always { echo "Pipeline finished!" }
-        success { echo "🎉 Success: Multi-region DB deployed!" }
-        failure { echo "❌ Failed: Check logs" }
     }
 }
